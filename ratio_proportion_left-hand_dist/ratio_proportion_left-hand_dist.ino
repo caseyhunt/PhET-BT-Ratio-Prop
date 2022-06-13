@@ -2,18 +2,21 @@
  * that contains a float value (4-bytes), and which sends a notification every second. 
  */
 #include <bluefruit.h>
-int adcin    = A0;
-int adcin2    = A1;
 
-int adcvalue = 0;
-int adcvalue2 = 0;
-int leftHandVal = 0;
+#include <Wire.h>
+#include "SparkFun_VL53L1X.h"
 
-float mv_per_lsb = 3600.0F/1024.0F; // 10-bit ADC with 3.6V input range
+
+#define SHUTDOWN_PIN 2
+#define INTERRUPT_PIN 3
+
+SFEVL53L1X distanceSensor;
+//Uncomment the following line to use the optional shutdown and interrupt pins.
+//SFEVL53L1X distanceSensor(Wire, SHUTDOWN_PIN, INTERRUPT_PIN);
 
 float value = 0.0; 
 int lastTime = millis();
-
+int leftHandVal;
 
 //All included services are in: C:\Users\Ali\AppData\Local\Arduino15\packages\adafruit\hardware\nrf52\0.14.0\libraries\Bluefruit52Lib\src\services
 BLEService floatNumberService;
@@ -32,30 +35,49 @@ void setupServicesAndCharacteristics(){
 }
 
 void setup(){ 
+    Wire.begin();
     
   Bluefruit.autoConnLed(true);   // Setup the BLE LED to be enabled on CONNECT
   //All config***() function must be called before begin()
   Bluefruit.configPrphBandwidth(BANDWIDTH_MAX); // Config the peripheral connection with maximum bandwidth 
   Bluefruit.begin();
   Bluefruit.setTxPower(0); // Set max power. Accepted values: -40, -30, -20, -16, -12, -8, -4, 0, 4
-  Bluefruit.setName("nrf52L");
+  Bluefruit.setName("nrf52R");
   Bluefruit.Periph.setConnectCallback(connect_callback);
   setupServicesAndCharacteristics(); 
   startAdv();   // Set up and start advertising
 
   Serial.begin(115200);
+    if (distanceSensor.begin() != 0) //Begin returns 0 on a good init
+  {
+    Serial.println("Sensor failed to begin. Please check wiring. Freezing...");
+    while (1)
+      ;
+  }
+    Serial.println("Sensor online!");
 }
+
 void loop(){ 
-  // Get a fresh ADC value
-  adcvalue = analogRead(adcin);
-  adcvalue2 = analogRead(adcin2);
 
-  leftHandVal = adcvalue - adcvalue2;
-  // Display the results
- leftHandVal = map(leftHandVal, 0, 40, 0, 100);
-  Serial.println(leftHandVal);
 
-  if(millis() - lastTime > 350){ //we wiil check the battery only once per 5 seconds. This reduces power consumption greatly.
+    distanceSensor.startRanging(); //Write configuration bytes to initiate measurement
+  while (!distanceSensor.checkForDataReady())
+  {
+    delay(1);
+  }
+  if(distanceSensor.getDistance() < 610){
+  int distance = distanceSensor.getDistance(); //Get the result of the measurement from the sensor
+  leftHandVal = map(distance, 15, 610, 0, 101);
+
+  distanceSensor.clearInterrupt();
+  distanceSensor.stopRanging();
+  Serial.print("Distance(mm): ");
+  Serial.print(leftHandVal);
+  Serial.println();
+  }
+
+  
+  if(millis() - lastTime > 500){ //we wiil check the battery only once per 5 seconds. This reduces power consumption greatly.
     value = leftHandVal;
     
     //value = 255.0f;
